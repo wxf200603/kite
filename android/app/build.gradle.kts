@@ -34,9 +34,13 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
+    // In skeleton (CI) builds we skip compiling the termux_pty native lib so
+    // the build does not require the Android NDK. Set -PkiteSkeletonBuild=true.
+    if (project.findProperty("kiteSkeletonBuild") != "true") {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+            }
         }
     }
 
@@ -100,10 +104,14 @@ tasks.register<Exec>("fetchProot") {
     commandLine("bash", repoRoot.resolve("tool/fetch_proot.sh").absolutePath)
     workingDir = repoRoot
     onlyIf {
-        val jniLibs = layout.projectDirectory.dir("src/main/jniLibs")
-        requiredProotLibs.any { name ->
-            val so = jniLibs.file(name).asFile
-            !so.isFile || so.length() == 0L
+        // Skip proot download in skeleton (CI) builds — the APK is a
+        // structural artifact and does not need the proot .so files.
+        project.findProperty("kiteSkeletonBuild") != "true" && run {
+            val jniLibs = layout.projectDirectory.dir("src/main/jniLibs")
+            requiredProotLibs.any { name ->
+                val so = jniLibs.file(name).asFile
+                !so.isFile || so.length() == 0L
+            }
         }
     }
 }
