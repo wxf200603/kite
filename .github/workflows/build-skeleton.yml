@@ -62,13 +62,19 @@ jobs:
       - name: Locate APK
         id: apk
         run: |
-          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n1)
+          # The project's android/build.gradle.kts redirects the Gradle build
+          # directory to the repo-root build/ folder, so look there first.
+          APK_PATH=$(find build/app/outputs -name "*.apk" 2>/dev/null | head -n1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find android/app/build/outputs -name "*.apk" 2>/dev/null | head -n1)
+          fi
           if [ -z "$APK_PATH" ]; then
             echo "::error::No APK produced"
             exit 1
           fi
           echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
           echo "apk_name=$(basename "$APK_PATH")" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK_PATH"
 
       - name: Upload skeleton APK artifact
         uses: actions/upload-artifact@v4
