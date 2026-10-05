@@ -8230,7 +8230,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutPageAppName.
   ///
   /// In en, this message translates to:
-  /// **'Kelivo'**
+  /// **'Kite'**
   String get aboutPageAppName;
 
   /// No description provided for @aboutPageAppDescription.
