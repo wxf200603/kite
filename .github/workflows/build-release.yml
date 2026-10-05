@@ -1,0 +1,116 @@
+name: Build Release APK
+
+# Full release build that packages precompiled native .so libraries.
+#
+# IMPORTANT — before running this workflow, replace the two REPLACE_ME URLs
+# below with direct (wget-able) download links to:
+#   1. libllama.so   (llama.cpp native lib for arm64-v8a)
+#   2. libquickjs.so (QuickJS native lib for arm64-v8a)
+#
+# The .so files are downloaded at CI runtime only — they are NOT committed to
+# git (the jniLibs directory is gitignored). Use a service like transfer.sh for
+# temporary direct links.
+#
+# This workflow keeps `kiteSkeletonBuild=true` so the :llama, :quickjs, and
+# termux_pty modules skip compiling from source (no NDK required). The
+# precompiled .so files placed in jniLibs/arm64-v8a/ are packaged into the APK.
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.47.6"
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Provide placeholder secrets
+        run: cp lib/secrets/fallback.dart.example lib/secrets/fallback.dart
+
+      - name: Enable skeleton mode (skip native .so source compilation)
+        # We ship precompiled .so files instead of compiling from source, so
+        # the build does not require the Android NDK.
+        run: |
+          if ! grep -q "kiteSkeletonBuild" android/gradle.properties 2>/dev/null; then
+            echo "kiteSkeletonBuild=true" >> android/gradle.properties
+          fi
+          cat android/gradle.properties
+
+      - name: Prepare jniLibs directory and download precompiled .so files
+        env:
+          LLAMA_SO_URL: "REPLACE_ME_WITH_DIRECT_URL_TO_libllama.so"
+          QUICKJS_SO_URL: "REPLACE_ME_WITH_DIRECT_URL_TO_libquickjs.so"
+        run: |
+          set -e
+          JNILIBS_DIR="android/app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$JNILIBS_DIR"
+
+          echo "Downloading libllama.so ..."
+          wget -q -O "$JNILIBS_DIR/libllama.so" "$LLAMA_SO_URL"
+
+          echo "Downloading libquickjs.so ..."
+          wget -q -O "$JNILIBS_DIR/libquickjs.so" "$QUICKJS_SO_URL"
+
+          echo "Downloaded .so files:"
+          ls -lh "$JNILIBS_DIR"/
+          # Fail fast if a download produced an empty/placeholder file.
+          for f in "$JNILIBS_DIR"/*.so; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Empty file: $f — check that the download URL is a valid direct link."
+              exit 1
+            fi
+          done
+
+      - name: Build release APK
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK_PATH=$(find build/app/outputs -name "*.apk" 2>/dev/null | head -n1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find android/app/build/outputs -name "*.apk" 2>/dev/null | head -n1)
+          fi
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::No APK produced"
+            exit 1
+          fi
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$APK_PATH")" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK_PATH"
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kite-release-apk
+          path: ${{ steps.apk.outputs.apk_path }}
+          retention-days: 14
+
+      - name: Print build summary
+        run: |
+          echo "## Release APK built" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Artifact: ${{ steps.apk.outputs.apk_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Native .so: precompiled (downloaded at CI runtime)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ABI: arm64-v8a only" >> "$GITHUB_STEP_SUMMARY"
