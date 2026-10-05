@@ -40,6 +40,12 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Provide placeholder secrets
+        # lib/secrets/fallback.dart is gitignored (real keys). The repo ships
+        # a .example placeholder; copy it so the Dart compile resolves the
+        # siliconflowFallbackKey import.
+        run: cp lib/secrets/fallback.dart.example lib/secrets/fallback.dart
+
       - name: Enable skeleton mode (skip native .so compilation)
         # Writing the property into gradle.properties ensures that when
         # `flutter build apk` invokes Gradle, the :llama and :quickjs modules
