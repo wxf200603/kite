@@ -1,0 +1,79 @@
+name: Build Skeleton APK
+
+# Builds a *skeleton* APK for structural validation only.
+# This workflow deliberately does NOT compile llama.cpp / QuickJS native .so
+# files (the Gradle property `kiteSkeletonBuild=true` skips externalNativeBuild
+# for the :llama and :quickjs modules). The resulting APK lacks native libs and
+# cannot run local inference / ToolPkg; it is only a build-artifact smoke test.
+#
+# For a full build, run locally in Android Studio with the precompiled .so
+# files placed in android/app/src/main/jniLibs/arm64-v8a/.
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-skeleton:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.9"
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Enable skeleton mode (skip native .so compilation)
+        # Writing the property into gradle.properties ensures that when
+        # `flutter build apk` invokes Gradle, the :llama and :quickjs modules
+        # see kiteSkeletonBuild=true and skip their externalNativeBuild blocks.
+        run: |
+          if ! grep -q "kiteSkeletonBuild" android/gradle.properties 2>/dev/null; then
+            echo "kiteSkeletonBuild=true" >> android/gradle.properties
+          fi
+          cat android/gradle.properties
+
+      - name: Build skeleton APK (no native .so)
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n1)
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::No APK produced"
+            exit 1
+          fi
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$APK_PATH")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload skeleton APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kite-skeleton-apk
+          path: ${{ steps.apk.outputs.apk_path }}
+          retention-days: 14
+
+      - name: Print build summary
+        run: |
+          echo "## Skeleton APK built" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Artifact: ${{ steps.apk.outputs.apk_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Native .so: **excluded** (skeleton build)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- For a full build, see README-CI.md" >> "$GITHUB_STEP_SUMMARY"
