@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -127,7 +129,6 @@ class _ToolSchemaSettingsPageState extends State<ToolSchemaSettingsPage> {
                       : null,
                 ),
                 SwitchListTile(
-                  enabled: settings.quickJsSandboxEnabled,
                   title: const Text('ToolPkg 允许网络访问'),
                   subtitle: const Text(
                     '允许声明了 network 能力的工具包通过 Dart HTTP 客户端发起请求。关闭时所有工具包网络调用直接返回权限错误。不做代理/VPN。',

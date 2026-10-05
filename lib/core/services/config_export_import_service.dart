@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../../database/business_preferences.dart';
+import '../database/business_preferences.dart';
 
 /// Exports and imports a curated subset of Kelivo-Operit configuration as JSON.
 ///

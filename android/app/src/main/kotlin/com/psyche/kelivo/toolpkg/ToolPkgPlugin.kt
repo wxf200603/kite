@@ -395,7 +395,7 @@ class ToolPkgPlugin(private val context: Context) {
                         response = value?.toString()
                         latch.countDown()
                     }
-                    override fun error(code: String?, msg: String?, details: Any?) {
+                    override fun error(code: String, msg: String?, details: Any?) {
                         failure = RuntimeException("HTTP error [$code]: ${msg ?: "unknown"}")
                         latch.countDown()
                     }

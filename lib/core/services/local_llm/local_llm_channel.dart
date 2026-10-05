@@ -177,7 +177,12 @@ class LocalLlmChannel {
     for (final key in snapshot) {
       final handler = _streamHandlers[key];
       if (handler != null) {
-        runCatching(() => handler(call));
+        try {
+          handler(call);
+        } catch (_) {
+          // Swallow handler exceptions so a misbehaving stream consumer
+          // cannot break dispatch to other active streams.
+        }
       }
     }
   }

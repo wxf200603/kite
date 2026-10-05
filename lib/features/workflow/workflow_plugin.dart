@@ -123,7 +123,7 @@ class Workflow {
   };
 }
 
-enum StepFailurePolicy { stop, continue }
+enum StepFailurePolicy { stop, continueOn }
 
 class WorkflowStep {
   const WorkflowStep({
@@ -145,8 +145,9 @@ class WorkflowStep {
     toolName: json['toolName']?.toString() ?? '',
     args: _stringKeyed(json['args'] as Map? ?? const {}),
     maxRetries: (json['maxRetries'] as num?)?.toInt() ?? 0,
-    onFailure: json['onFailure'] == 'continue'
-        ? StepFailurePolicy.continue
+    onFailure: (json['onFailure'] == 'continue' ||
+            json['onFailure'] == 'continueOn')
+        ? StepFailurePolicy.continueOn
         : StepFailurePolicy.stop,
   );
 
