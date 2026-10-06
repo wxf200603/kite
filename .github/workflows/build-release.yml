@@ -1,19 +1,14 @@
 name: Build Release APK
 
-# Full release build that packages precompiled native .so libraries.
+# Full release build that compiles native .so libraries from source.
 #
-# IMPORTANT — before running this workflow, replace the two REPLACE_ME URLs
-# below with direct (wget-able) download links to:
-#   1. libllama.so   (llama.cpp native lib for arm64-v8a)
-#   2. libquickjs.so (QuickJS native lib for arm64-v8a)
+# This workflow clones the upstream llama.cpp and QuickJS sources at CI time
+# (they are not vendored in this repo), lets Gradle + the Android NDK compile
+# libLlamaWrapper.so and libquickjsjni.so (plus termux_pty), and packages
+# everything into a single arm64-v8a release APK.
 #
-# The .so files are downloaded at CI runtime only — they are NOT committed to
-# git (the jniLibs directory is gitignored). Use a service like transfer.sh for
-# temporary direct links.
-#
-# This workflow keeps `kiteSkeletonBuild=true` so the :llama, :quickjs, and
-# termux_pty modules skip compiling from source (no NDK required). The
-# precompiled .so files placed in jniLibs/arm64-v8a/ are packaged into the APK.
+# No precompiled .so files are committed to git — all native libs are built
+# from source during the CI run.
 on:
   push:
     branches: [main, master]
@@ -22,7 +17,7 @@ on:
 jobs:
   build-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,8 +35,10 @@ jobs:
           flutter-version: "3.47.6"
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
+      - name: Accept Android SDK licenses (for NDK auto-download)
+        run: |
+          yes | flutter doctor --android-licenses >/dev/null 2>&1 || true
+          flutter doctor -v
 
       - name: Get dependencies
         run: flutter pub get
@@ -49,41 +46,28 @@ jobs:
       - name: Provide placeholder secrets
         run: cp lib/secrets/fallback.dart.example lib/secrets/fallback.dart
 
-      - name: Enable skeleton mode (skip native .so source compilation)
-        # We ship precompiled .so files instead of compiling from source, so
-        # the build does not require the Android NDK.
+      - name: Clone llama.cpp sources
+        # The :llama module's CMakeLists.txt expects llama.cpp at
+        # android/llama/llama.cpp-src/. We clone a recent release that has the
+        # modern llama_model_get_vocab / llama_sampler_* / common_chat_* API
+        # used by llama_jni_stub.cpp.
         run: |
-          if ! grep -q "kiteSkeletonBuild" android/gradle.properties 2>/dev/null; then
-            echo "kiteSkeletonBuild=true" >> android/gradle.properties
-          fi
-          cat android/gradle.properties
+          git clone --depth 1 --branch b4526 \
+            https://github.com/ggml-org/llama.cpp.git \
+            android/llama/llama.cpp-src
 
-      - name: Prepare jniLibs directory and download precompiled .so files
-        env:
-          LLAMA_SO_URL: "REPLACE_ME_WITH_DIRECT_URL_TO_libllama.so"
-          QUICKJS_SO_URL: "REPLACE_ME_WITH_DIRECT_URL_TO_libquickjs.so"
+      - name: Clone QuickJS sources
+        # The :quickjs module's CMakeLists.txt expects QuickJS at
+        # android/quickjs/src/main/cpp/quickjs-src/.
         run: |
-          set -e
-          JNILIBS_DIR="android/app/src/main/jniLibs/arm64-v8a"
-          mkdir -p "$JNILIBS_DIR"
+          git clone --depth 1 \
+            https://github.com/bellard/quickjs.git \
+            android/quickjs/src/main/cpp/quickjs-src
 
-          echo "Downloading libllama.so ..."
-          wget -q -O "$JNILIBS_DIR/libllama.so" "$LLAMA_SO_URL"
-
-          echo "Downloading libquickjs.so ..."
-          wget -q -O "$JNILIBS_DIR/libquickjs.so" "$QUICKJS_SO_URL"
-
-          echo "Downloaded .so files:"
-          ls -lh "$JNILIBS_DIR"/
-          # Fail fast if a download produced an empty/placeholder file.
-          for f in "$JNILIBS_DIR"/*.so; do
-            if [ ! -s "$f" ]; then
-              echo "::error::Empty file: $f — check that the download URL is a valid direct link."
-              exit 1
-            fi
-          done
-
-      - name: Build release APK
+      - name: Build release APK (compiles native libs from source)
+        # kiteSkeletonBuild is NOT set, so the :llama, :quickjs, and termux_pty
+        # modules compile from source. AGP auto-downloads the NDK
+        # (ndkVersion 28.2.13676358 from app/build.gradle.kts).
         run: flutter build apk --release --target-platform android-arm64
 
       - name: Locate APK
@@ -112,5 +96,5 @@ jobs:
         run: |
           echo "## Release APK built" >> "$GITHUB_STEP_SUMMARY"
           echo "- Artifact: ${{ steps.apk.outputs.apk_name }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Native .so: precompiled (downloaded at CI runtime)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Native .so: compiled from source (llama.cpp + QuickJS + termux_pty)" >> "$GITHUB_STEP_SUMMARY"
           echo "- ABI: arm64-v8a only" >> "$GITHUB_STEP_SUMMARY"
